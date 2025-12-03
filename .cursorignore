@@ -1,0 +1,29 @@
+# 1. 屏蔽 WordPress 核心 (Token 杀手)
+wp-admin/
+wp-includes/
+
+# 2. 屏蔽所有非开发相关的资源
+wp-content/uploads/
+*.log
+*.zip
+*.sql
+*.css.map
+*.js.map
+*.sass-cache/
+node_modules/
+vendor/
+
+# 3. 屏蔽 Git 版本控制
+.git/
+
+# 4. 屏蔽所有插件和主题，只保留你关心的 (最关键的省钱步骤)
+wp-content/plugins/*
+!wp-content/plugins/your-custom-snippets-plugin-name/  # <-- 替换成你的独立代码插件名
+!wp-content/plugins/code-snippets/                     # <-- 如果你使用 Code Snippets 插件，保留此行
+
+wp-content/themes/*
+!wp-content/themes/your-child-theme-name/             # <-- 替换成你的子主题文件夹名
+
+# 5. Kinsta 服务器相关的临时或配置文件 (通常不应该上传到 Git，也不应该被 AI 读取)
+kinsta-mu-plugins/
+.user.ini
