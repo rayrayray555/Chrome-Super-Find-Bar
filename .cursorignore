@@ -1,29 +1,30 @@
-# 1. 屏蔽 WordPress 核心 (Token 杀手)
-wp-admin/
-wp-includes/
+# 1. 编译输出和分发文件 (这些是 AI 不应该读取的最终结果)
+dist/
+build/
+out/
+temp/
 
-# 2. 屏蔽所有非开发相关的资源
-wp-content/uploads/
-*.log
-*.zip
-*.sql
-*.css.map
-*.js.map
-*.sass-cache/
+# 2. 依赖管理文件夹 (Token 杀手，尤其是 Node.js 项目)
 node_modules/
-vendor/
 
-# 3. 屏蔽 Git 版本控制
+# 3. 版本控制和系统文件
 .git/
+.DS_Store
+Thumbs.db
 
-# 4. 屏蔽所有插件和主题，只保留你关心的 (最关键的省钱步骤)
-wp-content/plugins/*
-!wp-content/plugins/your-custom-snippets-plugin-name/  # <-- 替换成你的独立代码插件名
-!wp-content/plugins/code-snippets/                     # <-- 如果你使用 Code Snippets 插件，保留此行
+# 4. 源码地图和日志
+*.map
+*.log
+npm-debug.log*
 
-wp-content/themes/*
-!wp-content/themes/your-child-theme-name/             # <-- 替换成你的子主题文件夹名
+# 5. 标准文档 (按您的要求屏蔽)
+LICENSE*
+README*
+*.md
 
-# 5. Kinsta 服务器相关的临时或配置文件 (通常不应该上传到 Git，也不应该被 AI 读取)
-kinsta-mu-plugins/
-.user.ini
+# 6. 配置文件和缓存 (如果这些文件中不包含你需要 AI 修改的逻辑)
+.env
+.eslintcache
+.babelrc
+.gitignore
+.editorconfig
