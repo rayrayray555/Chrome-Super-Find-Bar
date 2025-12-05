@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name          Super Find Bar 18.0 - CSS Highlight API
+// @name          Super Find Bar 17.0 - Robust Core & Fixed Logic
 // @namespace     http://tampermonkey.net/
-// @version       18.0
-// @description   Non-destructive highlighting using CSS Highlight API. Zero DOM mutations, zero crashes.
+// @version       17.0
+// @description   Robust snapshot-based search core, click-outside fix, toggle-switch i18n UI.
 // @author        RayWu (Co-pilot with Gemini)
 // @match         *://*/*
 // @grant         GM_setValue
@@ -14,60 +14,100 @@
     'use strict';
 
     /********************
-      1. 配置与常量
+      1. 配置与常量 (Config & Constants)
     ********************/
-    const HOST_ID = 'sf-bar-root-v18';
-    const BTN_ID = 'sf-launch-btn-v18';
-    const STORAGE_KEY = 'sf-bar-config-v18';
+    const HOST_ID = 'sf-bar-root-v17';
+    const BTN_ID = 'sf-launch-btn-v17';
+    const STORAGE_KEY = 'sf-bar-config-v17';
 
     const DEFAULT_CONFIG = {
-        theme: { bg: '#202124', text: '#e8eaed', opacity: 0.95 },
-        layout: { mode: 'float', position: 'top-right', persistent: false },
+        theme: {
+            bg: '#202124',
+            text: '#e8eaed',
+            opacity: 0.95
+        },
+        layout: {
+            mode: 'float',
+            position: 'top-right',
+            persistent: false
+        },
         search: {
-            matchCase: false, wholeWord: false, highlightAll: true,
-            ignoreAccents: true, regex: false, includeHidden: false,
-            fuzzy: false, fuzzyTolerance: 1,
+            matchCase: false,
+            wholeWord: false,
+            highlightAll: true,
+            ignoreAccents: true,
+            regex: false,
+            includeHidden: false,
+            fuzzy: false,
+            fuzzyTolerance: 1,
             pinned: ['matchCase', 'wholeWord', 'ignoreAccents', 'highlightAll'],
             perfThreshold: 3000
         },
-        colors: ['#fce8b2', '#ccff90', '#8ab4f8', '#e6c9a8', '#d7aefb', '#fdcfe8', '#a7ffeb'],
-        lang: 'zh'
+        colors: [
+            '#fce8b2', // Yellow
+            '#ccff90', // Green
+            '#8ab4f8', // Blue
+            '#e6c9a8', // Beige
+            '#d7aefb', // Purple
+            '#fdcfe8', // Pink
+            '#a7ffeb'  // Teal
+        ],
+        lang: 'zh' // 'zh' | 'en'
     };
 
     let CONFIG = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_CONFIG;
-    CONFIG = { 
-        ...DEFAULT_CONFIG, ...CONFIG, 
-        theme: { ...DEFAULT_CONFIG.theme, ...CONFIG.theme }, 
+    CONFIG = {
+        ...DEFAULT_CONFIG,
+        ...CONFIG,
+        theme: { ...DEFAULT_CONFIG.theme, ...CONFIG.theme },
         layout: { ...DEFAULT_CONFIG.layout, ...CONFIG.layout },
         search: { ...DEFAULT_CONFIG.search, ...CONFIG.search },
         colors: CONFIG.colors || DEFAULT_CONFIG.colors
     };
     if(!CONFIG.lang) CONFIG.lang = 'zh';
 
-    function saveConfig() { localStorage.setItem(STORAGE_KEY, JSON.stringify(CONFIG)); }
+    function saveConfig() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(CONFIG));
+    }
 
     // i18n
     const I18N = {
         zh: {
-            ph: '查找（多字段搜索"，"隔开）...',
+            ph: '查找（多字段搜索“，”隔开）...',
             phFuzzy: '模糊模式：输入后按 Enter 计算...',
             phManual: '页面内容过多：输入后按 Enter 计算...',
             count: '{i} / {total}',
             hiddenAlert: '位于隐藏区域',
-            noSupport: '浏览器不支持 CSS Highlight API',
+            loading: '计算中...',
             titles: {
-                prev: '上一个 (Shift+Enter)', next: '下一个 (Enter)',
-                close: '关闭 (Esc)', pin: '固定', adv: '设置', reset: '重置'
+                prev: '上一个 (Shift+Enter)',
+                next: '下一个 (Enter)',
+                close: '关闭 (Esc)',
+                pin: '固定',
+                adv: '设置',
+                reset: '重置'
             },
-            group: { tool: '工具栏显示', search: '搜索设置', layout: '布局 & 外观' },
+            group: {
+                tool: '工具栏显示',
+                search: '搜索设置',
+                layout: '布局 & 外观'
+            },
             lbl: {
-                fuzzyTol: '模糊容错 (字数)', perf: '自动搜索阈值 (节点数)',
+                fuzzyTol: '模糊容错 (字数)',
+                perf: '自动搜索阈值 (节点数)',
                 perfHint: '超过此数值将关闭实时搜索。',
-                bg: '背景', txt: '文字', op: '背景透明度', lang: '语言 / Language'
+                bg: '背景',
+                txt: '文字',
+                op: '背景透明度',
+                lang: '语言 / Language'
             },
             opts: {
-                matchCase: '区分大小写', wholeWord: '全词匹配', highlightAll: '高亮所有',
-                ignoreAccents: '忽略重音', regex: '正则表达式', includeHidden: '包含隐藏',
+                matchCase: '区分大小写',
+                wholeWord: '全词匹配',
+                highlightAll: '高亮所有',
+                ignoreAccents: '忽略重音',
+                regex: '正则表达式',
+                includeHidden: '包含隐藏',
                 fuzzy: '模糊搜索'
             }
         },
@@ -77,20 +117,36 @@
             phManual: 'Page too large: Press Enter to search...',
             count: '{i} / {total}',
             hiddenAlert: 'Hidden Element',
-            noSupport: 'Browser does not support CSS Highlight API',
+            loading: 'Searching...',
             titles: {
-                prev: 'Previous (Shift+Enter)', next: 'Next (Enter)',
-                close: 'Close (Esc)', pin: 'Pin', adv: 'Settings', reset: 'Reset'
+                prev: 'Previous (Shift+Enter)',
+                next: 'Next (Enter)',
+                close: 'Close (Esc)',
+                pin: 'Pin',
+                adv: 'Settings',
+                reset: 'Reset'
             },
-            group: { tool: 'Toolbar Options', search: 'Search Settings', layout: 'Layout & Appearance' },
+            group: {
+                tool: 'Toolbar Options',
+                search: 'Search Settings',
+                layout: 'Layout & Appearance'
+            },
             lbl: {
-                fuzzyTol: 'Fuzzy Tolerance', perf: 'Auto-Search Threshold',
+                fuzzyTol: 'Fuzzy Tolerance',
+                perf: 'Auto-Search Threshold',
                 perfHint: 'Disable live search if nodes exceed this.',
-                bg: 'Bg', txt: 'Txt', op: 'Bg Opacity', lang: 'Language'
+                bg: 'Bg',
+                txt: 'Txt',
+                op: 'Bg Opacity',
+                lang: 'Language'
             },
             opts: {
-                matchCase: 'Match Case', wholeWord: 'Whole Word', highlightAll: 'Highlight All',
-                ignoreAccents: 'Ignore Accents', regex: 'Regex', includeHidden: 'Include Hidden',
+                matchCase: 'Match Case',
+                wholeWord: 'Whole Word',
+                highlightAll: 'Highlight All',
+                ignoreAccents: 'Ignore Accents',
+                regex: 'Regex',
+                includeHidden: 'Include Hidden',
                 fuzzy: 'Fuzzy Search'
             }
         }
@@ -104,7 +160,7 @@
     }
 
     /********************
-      2. 核心算法
+      2. 核心逻辑 (Core Logic)
     ********************/
 
     function isCJK(str) { return /[\u4e00-\u9fa5]/.test(str); }
@@ -138,23 +194,21 @@
     }
 
     /********************
-      3. UI 构建
+      3. UI 构建 (UI Construction)
     ********************/
     let shadow, root, input, countDisplay, toast, tickBar, chkGroup, loadingInd, advPanel, btnAdv;
     let launchBtn;
-    
-    // 检测 CSS Highlight API 支持
-    const SUPPORTS_HIGHLIGHT = typeof CSS !== 'undefined' && CSS.highlights;
-    
-    let state = { 
-        ranges: [],           // Range 对象数组
-        idx: -1, 
-        visible: false, 
-        searchId: 0, 
-        isDirty: false, 
-        nodeCount: 0, 
+    let state = {
+        ranges: [],      // 改用 Range 对象数组（替代 marks）
+        idx: -1,
+        visible: false,
+        searchId: 0,
+        isDirty: false,
+        nodeCount: 0,
         manualMode: false,
-        abortController: null
+        abortController: null,
+        currentHighlight: null, // CSS Highlight 实例
+        supportsHighlight: typeof CSS !== 'undefined' && CSS.highlights // 检测 API 支持
     };
 
     function tryInit() {
@@ -174,7 +228,7 @@
         launchBtn = document.createElement('div');
         launchBtn.id = BTN_ID;
         Object.assign(launchBtn.style, {
-            position: 'fixed', bottom: '20px', right: '20px', 
+            position: 'fixed', bottom: '20px', right: '20px',
             width: '40px', height: '40px', borderRadius: '50%',
             background: CONFIG.theme.bg, color: CONFIG.theme.text,
             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
@@ -204,15 +258,21 @@
         style.textContent = `
             :host { all: initial; font-family: system-ui, sans-serif; font-size: 14px; --sf-accent: #8ab4f8; --sf-warn: #d93025; --sf-bg: ${CONFIG.theme.bg}; --sf-txt: ${CONFIG.theme.text}; }
             * { box-sizing: border-box; }
-            
+
             .sf-box {
-                position: fixed; display: flex; background: var(--sf-bg); color: var(--sf-txt);
-                opacity: ${CONFIG.theme.opacity}; backdrop-filter: blur(5px);
-                box-shadow: 0 8px 24px rgba(0,0,0,0.4); transition: transform 0.2s, opacity 0.2s;
-                pointer-events: auto; border: 1px solid rgba(255,255,255,0.15);
+                position: fixed; display: flex;
+                background: var(--sf-bg); color: var(--sf-txt);
+                opacity: ${CONFIG.theme.opacity};
+                backdrop-filter: blur(5px);
+                box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+                transition: transform 0.2s, opacity 0.2s;
+                pointer-events: auto;
+                border: 1px solid rgba(255,255,255,0.15);
             }
 
-            .sf-box.mode-float { flex-direction: column; width: 485px; border-radius: 12px; margin: 20px; padding: 10px; }
+            .sf-box.mode-float {
+                flex-direction: column; width: 485px; border-radius: 12px; margin: 20px; padding: 10px;
+            }
             .mode-float .sf-row-top { display: flex; align-items: center; gap: 8px; width: 100%; }
             .mode-float .sf-row-bot { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); }
             .mode-float .sf-chk-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -226,14 +286,17 @@
             .sf-pos-bottom-left { bottom: 0; left: 0; transform: translateY(120%); }
             .sf-pos-bottom-left.show { transform: translateY(0); }
 
-            .sf-box.mode-bar { width: 100%; left: 0; right: 0; margin: 0; border-radius: 0; border: 0;
-                flex-direction: row; align-items: center; padding: 0 16px; height: 50px; justify-content: flex-start; gap: 8px; }
+            .sf-box.mode-bar {
+                width: 100%; left: 0; right: 0; margin: 0; border-radius: 0; border: 0;
+                flex-direction: row; align-items: center; padding: 0 16px; height: 50px;
+                justify-content: flex-start; gap: 8px;
+            }
             .sf-pos-top { top: 0; transform: translateY(-100%); border-bottom: 1px solid rgba(255,255,255,0.1); }
             .sf-pos-top.show { transform: translateY(0); }
             .sf-pos-bottom { bottom: 0; transform: translateY(100%); border-top: 1px solid rgba(255,255,255,0.1); }
             .sf-pos-bottom.show { transform: translateY(0); }
-            
-            .mode-bar .sf-row-top, .mode-bar .sf-row-bot { display: contents; } 
+
+            .mode-bar .sf-row-top, .mode-bar .sf-row-bot { display: contents; }
             .mode-bar .sf-input-wrap { order: 1; flex: 0 1 350px; }
             .mode-bar .sf-btn-prev { order: 2; }
             .mode-bar .sf-btn-next { order: 3; }
@@ -244,42 +307,55 @@
             .mode-float .sf-btn-pin { margin-left: auto; }
 
             .sf-input-wrap { position: relative; display: flex; align-items: center; flex-grow: 1; }
-            input[type="text"] { width: 100%; background: rgba(255,255,255,0.1); border: 2px solid transparent;
+            input[type="text"] {
+                width: 100%; background: rgba(255,255,255,0.1); border: 2px solid transparent;
                 color: inherit; padding: 6px 40px 6px 8px; border-radius: 6px; outline: none;
-                transition: border-color 0.2s; font-size: 14px; }
+                transition: border-color 0.2s; font-size: 14px;
+            }
             input[type="text"]:focus { border-color: var(--sf-accent); }
             input[type="text"].warn-hidden { border-color: var(--sf-accent); border-style: dashed; }
-            
+
             .sf-count { position: absolute; right: 8px; font-size: 11px; opacity: 0.7; pointer-events: none; transition: opacity 0.2s; }
-            .sf-loading { position: absolute; right: 8px; width: 14px; height: 14px;
+            .sf-loading {
+                position: absolute; right: 8px; width: 14px; height: 14px;
                 border: 2px solid rgba(255,255,255,0.3); border-top-color: var(--sf-accent);
-                border-radius: 50%; animation: spin 0.8s linear infinite; display: none; }
+                border-radius: 50%; animation: spin 0.8s linear infinite; display: none;
+            }
             @keyframes spin { to { transform: rotate(360deg); } }
 
-            button { background: transparent; border: none; color: inherit; cursor: pointer;
+            button {
+                background: transparent; border: none; color: inherit; cursor: pointer;
                 padding: 6px; border-radius: 4px; display: flex; align-items: center; justify-content: center;
-                transition: background 0.1s; min-width: 28px; height: 28px; flex-shrink: 0; }
+                transition: background 0.1s; min-width: 28px; height: 28px; flex-shrink: 0;
+            }
             button:hover { background: rgba(255,255,255,0.15); }
             button.active { color: var(--sf-accent); background: rgba(138, 180, 248, 0.1); }
             .sf-btn-pin.active { color: #ff5555; opacity: 1; transform: none; }
 
-            .sf-chk { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; 
-                opacity: 0.8; font-size: 12px; margin-right: 8px; background: rgba(255,255,255,0.05); padding: 2px 6px; 
-                border-radius: 4px; white-space: nowrap; }
+            .sf-chk {
+                display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;
+                opacity: 0.8; font-size: 12px; margin-right: 8px;
+                background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;
+                white-space: nowrap;
+            }
             .sf-chk:hover { opacity: 1; background: rgba(255,255,255,0.1); }
             .sf-chk input { accent-color: var(--sf-accent); margin: 0; }
-            
-            .sf-adv-panel { display: none; background: var(--sf-bg); border: 1px solid rgba(255,255,255,0.2);
+
+            .sf-adv-panel {
+                display: none; background: var(--sf-bg); border: 1px solid rgba(255,255,255,0.2);
                 border-radius: 8px; padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-                width: 340px; z-index: 2147483648; color: var(--sf-txt); }
+                width: 340px; z-index: 2147483648; color: var(--sf-txt);
+            }
             .sf-adv-panel.open { display: block; }
             .mode-float .sf-adv-panel { margin-top: 12px; width: 100%; }
-            .mode-bar .sf-adv-panel { position: fixed; } 
+            .mode-bar .sf-adv-panel { position: fixed; }
 
             .sf-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
-            .sf-group-title { font-size: 11px; opacity: 0.5; text-transform: uppercase; font-weight: bold; 
+            .sf-group-title {
+                font-size: 11px; opacity: 0.5; text-transform: uppercase; font-weight: bold;
                 margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 2px;
-                display:flex; justify-content: space-between; align-items: center; }
+                display:flex; justify-content: space-between; align-items: center;
+            }
             .sf-adv-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; flex-wrap: wrap;}
             .sf-adv-lbl { font-size: 13px; }
             .sf-hint { font-size: 10px; color: #ff9800; margin-top: 2px; line-height: 1.2; width: 100%; }
@@ -288,16 +364,19 @@
             .sf-mini-btn { height: 24px; background: rgba(255,255,255,0.1); border-radius: 2px; cursor: pointer; border: 1px solid transparent; }
             .sf-mini-btn:hover { background: var(--sf-accent); }
             .sf-mini-btn.active { background: var(--sf-accent); border-color: #fff; }
-            .sf-bar-btn { width: 100%; height: 20px; background: rgba(255,255,255,0.1); cursor: pointer; border-radius: 2px; 
-                margin-top: 4px; border: 1px solid transparent; text-align:center; line-height:18px; font-size:10px;}
+            .sf-bar-btn { width: 100%; height: 20px; background: rgba(255,255,255,0.1); cursor: pointer; border-radius: 2px; margin-top: 4px; border: 1px solid transparent; text-align:center; line-height:18px; font-size:10px;}
             .sf-bar-btn:hover { background: var(--sf-accent); }
             .sf-bar-btn.active { background: var(--sf-accent); border-color: #fff; }
 
-            .sf-toast { position: absolute; right: 0; top: -30px; padding: 4px 8px;
+            .sf-toast {
+                position: absolute; right: 0; top: -30px; padding: 4px 8px;
                 background: var(--sf-warn); color: #fff; border-radius: 4px;
-                font-size: 11px; font-weight: bold; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+                font-size: 11px; font-weight: bold; pointer-events: none;
+                opacity: 0; transition: opacity 0.2s;
+            }
             .sf-toast.visible { opacity: 1; }
 
+            /* Lang Switch */
             .sf-lang-switch { display: flex; background: rgba(255,255,255,0.1); border-radius: 4px; padding: 2px; cursor: pointer; }
             .sf-lang-opt { padding: 2px 8px; border-radius: 2px; font-size: 11px; opacity: 0.6; transition: 0.2s; }
             .sf-lang-opt.active { background: var(--sf-accent); color: #fff; opacity: 1; font-weight: bold; }
@@ -305,7 +384,7 @@
         shadow.appendChild(style);
 
         root = document.createElement('div');
-        
+
         const topRow = document.createElement('div');
         topRow.className = 'sf-row-top';
 
@@ -313,18 +392,18 @@
         inputWrap.className = 'sf-input-wrap';
         input = document.createElement('input');
         input.type = 'text';
-        input.placeholder = t('ph'); 
-        
+        input.placeholder = t('ph');
+
         countDisplay = document.createElement('div');
         countDisplay.className = 'sf-count';
-        
+
         loadingInd = document.createElement('div');
         loadingInd.className = 'sf-loading';
 
         toast = document.createElement('div');
         toast.className = 'sf-toast';
         toast.textContent = t('hiddenAlert');
-        
+
         inputWrap.append(input, countDisplay, loadingInd, toast);
 
         const btnPrev = mkBtn('▲', t('titles.prev'), () => go(-1), 'sf-btn-prev');
@@ -353,10 +432,11 @@
         initTickBar();
 
         let deb;
-        input.oninput = () => { 
+        input.oninput = () => {
             state.isDirty = true;
             if (CONFIG.search.fuzzy || state.manualMode) return;
-            clearTimeout(deb); 
+            clearTimeout(deb);
+            // 增强防抖：长页面给予更多准备时间
             const delay = state.nodeCount > CONFIG.search.perfThreshold ? 500 : 200;
             deb = setTimeout(triggerSearch, delay);
         };
@@ -372,9 +452,10 @@
             }
         };
 
-        // Click Outside
+        // Fix Click Outside
         document.addEventListener('mousedown', (e) => {
             if (!state.visible) return;
+            // 检查点击是否在插件外部 (shadow host 节点)
             const host = document.getElementById(HOST_ID);
             if (host && !host.contains(e.target)) {
                 if (advPanel.classList.contains('open')) {
@@ -382,21 +463,16 @@
                 }
             }
         });
+        // Shadow 内部点击，如果没点在 advPanel 也没点在 btnAdv
         root.addEventListener('mousedown', (e) => {
             if (advPanel.classList.contains('open')) {
+                // e.composedPath() 可以获取 Shadow DOM 内的事件路径
                 const path = e.composedPath();
                 if (!path.includes(advPanel) && !path.includes(btnAdv)) {
                     advPanel.classList.remove('open');
                 }
             }
         });
-
-        // 显示兼容性警告
-        if (!SUPPORTS_HIGHLIGHT) {
-            toast.textContent = t('noSupport');
-            toast.classList.add('visible');
-            setTimeout(() => toast.classList.remove('visible'), 5000);
-        }
     }
 
     function renderAdvPanel() {
@@ -433,7 +509,8 @@
         // Group 2: Search Settings
         const grpSearch = document.createElement('div');
         grpSearch.innerHTML = `<div class="sf-group-title">${t('group.search')}</div>`;
-        
+
+        // Fuzzy Tolerance
         const fuzzyRow = document.createElement('div');
         fuzzyRow.className = 'sf-adv-row';
         fuzzyRow.style.flexWrap = 'wrap';
@@ -451,55 +528,66 @@
         };
         fuzzyRow.append(fuzzyVal, fuzzyRange);
 
+        // Performance Threshold
         const perfRow = document.createElement('div');
         perfRow.className = 'sf-adv-row';
         perfRow.style.marginTop = '8px';
         perfRow.innerHTML = `<span class="sf-adv-lbl">${t('lbl.perf')}</span>`;
+
         const perfCtrl = document.createElement('div');
         perfCtrl.style.display = 'flex'; perfCtrl.style.gap = '4px'; perfCtrl.style.marginLeft = 'auto';
+
         const perfInp = document.createElement('input');
         perfInp.type = 'number'; perfInp.value = CONFIG.search.perfThreshold;
-        perfInp.style.width = '60px'; perfInp.style.background = 'rgba(255,255,255,0.1)'; perfInp.style.border = 'none'; 
-        perfInp.style.color='inherit'; perfInp.style.borderRadius='4px'; perfInp.style.padding='2px';
+        perfInp.style.width = '60px'; perfInp.style.background = 'rgba(255,255,255,0.1)'; perfInp.style.border = 'none'; perfInp.style.color='inherit'; perfInp.style.borderRadius='4px'; perfInp.style.padding='2px';
         perfInp.onchange = (e) => {
             let v = parseInt(e.target.value);
             if(isNaN(v) || v < 0) v = 3000;
             CONFIG.search.perfThreshold = v;
             saveConfig();
         };
+
         const btnReset = mkBtn(t('titles.reset'), 'Default 3000', () => {
             CONFIG.search.perfThreshold = 3000;
             perfInp.value = 3000;
             saveConfig();
         });
         btnReset.style.fontSize = '10px'; btnReset.style.padding='2px 4px';
+
         perfCtrl.append(perfInp, btnReset);
         perfRow.append(perfCtrl);
+
         const perfHint = document.createElement('div');
         perfHint.className = 'sf-hint';
         perfHint.textContent = t('lbl.perfHint');
+
         grpSearch.append(fuzzyRow, perfRow, perfHint);
 
         // Group 3: Layout
         const grpLayout = document.createElement('div');
         grpLayout.innerHTML = `<div class="sf-group-title">${t('group.layout')}</div>`;
-        
+
+        // Lang Switch (Toggle Style)
         const langRow = document.createElement('div');
         langRow.className = 'sf-adv-row';
         langRow.innerHTML = `<span class="sf-adv-lbl">${t('lbl.lang')}</span>`;
         const langSwitch = document.createElement('div');
         langSwitch.className = 'sf-lang-switch';
+
         const optZh = document.createElement('div'); optZh.className = `sf-lang-opt ${CONFIG.lang === 'zh' ? 'active' : ''}`;
         optZh.textContent = '中文';
         optZh.onclick = () => switchLang('zh');
+
         const optEn = document.createElement('div'); optEn.className = `sf-lang-opt ${CONFIG.lang === 'en' ? 'active' : ''}`;
         optEn.textContent = 'EN';
         optEn.onclick = () => switchLang('en');
+
         langSwitch.append(optZh, optEn);
         langRow.appendChild(langSwitch);
-        
+
         const layoutRow = document.createElement('div');
         layoutRow.style.display = 'flex'; layoutRow.style.justifyContent = 'space-between';
+
         const miniMap = document.createElement('div');
         miniMap.className = 'sf-mini-map';
         [['tl', 'top-left'], ['tr', 'top-right'], ['bl', 'bottom-left'], ['br', 'bottom-right']].forEach(([label, pos]) => {
@@ -511,7 +599,7 @@
         });
         const barWrap = document.createElement('div');
         barWrap.style.width = '40px';
-        const barTop = document.createElement('div'); barTop.className = `sf-bar-btn ${CONFIG.layout.position === 'top' ? 'active' : ''}`; 
+        const barTop = document.createElement('div'); barTop.className = `sf-bar-btn ${CONFIG.layout.position === 'top' ? 'active' : ''}`;
         barTop.textContent = 'TOP'; barTop.onclick = () => setPos('top', 'bar');
         const barBot = document.createElement('div'); barBot.className = `sf-bar-btn ${CONFIG.layout.position === 'bottom' ? 'active' : ''}`;
         barBot.textContent = 'BOT'; barBot.onclick = () => setPos('bottom', 'bar');
@@ -520,34 +608,41 @@
 
         const colorRow = document.createElement('div');
         colorRow.style.marginTop = '8px'; colorRow.style.display='flex'; colorRow.style.alignItems='center'; colorRow.style.justifyContent='space-between';
+
         const c1 = document.createElement('div'); c1.style.display='flex'; c1.style.alignItems='center'; c1.style.gap='4px';
-        const bgInp = document.createElement('input'); bgInp.type='color'; bgInp.value = CONFIG.theme.bg; 
+        const bgInp = document.createElement('input'); bgInp.type='color'; bgInp.value = CONFIG.theme.bg;
         bgInp.style.cssText = "width:20px;height:20px;border:none;padding:0;cursor:pointer;border-radius:4px";
         bgInp.onchange = e => { CONFIG.theme.bg = e.target.value; applyTheme(); saveConfig(); };
         c1.append(document.createTextNode(t('lbl.bg')), bgInp);
+
         const c2 = document.createElement('div'); c2.style.display='flex'; c2.style.alignItems='center'; c2.style.gap='4px';
         const txtInp = document.createElement('input'); txtInp.type='color'; txtInp.value = CONFIG.theme.text;
         txtInp.style.cssText = "width:20px;height:20px;border:none;padding:0;cursor:pointer;border-radius:4px";
         txtInp.onchange = e => { CONFIG.theme.text = e.target.value; applyTheme(); saveConfig(); };
         c2.append(document.createTextNode(t('lbl.txt')), txtInp);
+
         colorRow.append(c1, c2);
 
         const opRow = document.createElement('div');
         opRow.className = 'sf-adv-row'; opRow.style.marginTop = '4px';
         opRow.innerHTML = `<span class="sf-adv-lbl">${t('lbl.op')}</span>`;
+
         const opVal = document.createElement('span');
         opVal.style.fontSize = '12px'; opVal.style.marginLeft='auto'; opVal.style.marginRight='8px';
         opVal.textContent = Math.round(CONFIG.theme.opacity * 100) + '%';
+
         const opInp = document.createElement('input'); opInp.type='range'; opInp.min='0.5'; opInp.max='1'; opInp.step='0.05';
         opInp.value = CONFIG.theme.opacity; opInp.style.width='80px';
-        opInp.oninput = e => { 
-            CONFIG.theme.opacity = e.target.value; 
+        opInp.oninput = e => {
+            CONFIG.theme.opacity = e.target.value;
             opVal.textContent = Math.round(e.target.value * 100) + '%';
-            applyTheme(); saveConfig(); 
+            applyTheme(); saveConfig();
         };
+
         opRow.append(opVal, opInp);
 
         grpLayout.append(langRow, layoutRow, colorRow, opRow);
+
         grid.append(grpTools, grpSearch, grpLayout);
         advPanel.append(grid);
     }
@@ -558,6 +653,7 @@
         renderAdvPanel();
         renderCheckboxes(chkGroup);
         updatePlaceholder();
+        // Update Buttons
         shadow.querySelector('.sf-btn-prev').title = t('titles.prev');
         shadow.querySelector('.sf-btn-next').title = t('titles.next');
         shadow.querySelector('.sf-btn-close').title = t('titles.close');
@@ -577,6 +673,15 @@
         });
     }
 
+    function initTickBar() {
+        tickBar = document.createElement('div');
+        Object.assign(tickBar.style, {
+            position: 'fixed', top: '0', right: '0', width: '16px', height: '100%',
+            zIndex: 2147483646, pointerEvents: 'none', display: 'none'
+        });
+        document.body.appendChild(tickBar);
+    }
+
     function updatePlaceholder() {
         if (!input) return;
         if (CONFIG.search.fuzzy) {
@@ -588,27 +693,18 @@
         }
     }
 
-    function initTickBar() {
-        tickBar = document.createElement('div');
-        Object.assign(tickBar.style, {
-            position: 'fixed', top: '0', right: '0', width: '16px', height: '100%',
-            zIndex: 2147483646, pointerEvents: 'none', display: 'none'
-        });
-        document.body.appendChild(tickBar);
-    }
-
     // Helper Utils
     function mkBtn(html, title, cb, cls) {
         const b = document.createElement('button');
-        b.innerHTML = html; b.title = title; b.onclick = cb; 
+        b.innerHTML = html; b.title = title; b.onclick = cb;
         if(cls) b.className = cls; return b;
     }
     function mkChk(key, label) {
         const l = document.createElement('label'); l.className = 'sf-chk';
         const c = document.createElement('input'); c.type='checkbox'; c.checked = CONFIG.search[key];
-        c.onchange = () => { 
-            CONFIG.search[key] = c.checked; 
-            saveConfig(); 
+        c.onchange = () => {
+            CONFIG.search[key] = c.checked;
+            saveConfig();
             updatePlaceholder();
             if (!CONFIG.search.fuzzy && !state.manualMode && state.isDirty) triggerSearch();
         };
@@ -657,12 +753,12 @@
     }
     function applyTheme() {
         root.style.setProperty('--sf-bg', CONFIG.theme.bg);
-        root.style.setProperty('--sf-txt', CONFIG.theme.text); 
+        root.style.setProperty('--sf-txt', CONFIG.theme.text);
         root.style.opacity = CONFIG.theme.opacity;
     }
 
     /********************
-      4. CSS Highlight API 搜索逻辑
+      4. 搜索逻辑 (Search Logic) - Robust Snapshot Core
     ********************/
 
     function checkPageSize() {
@@ -681,45 +777,62 @@
     }
 
     async function triggerSearch() {
-        if (!SUPPORTS_HIGHLIGHT) return; // 不支持则直接返回
-
-        // 清理旧高亮
-        if (CSS.highlights) {
-            CSS.highlights.clear();
-        }
-        
-        state.isDirty = false;
-        state.searchId++;
-        const currentId = state.searchId;
-        
+        // === Phase 0: Forced Cleanup (强制清理) ===
         if (state.abortController) {
             state.abortController.abort = true;
         }
+
+        // 清理旧的高亮（CSS Highlight API 方式 - 无 DOM 操作！）
+        if (state.supportsHighlight && CSS.highlights) {
+            CSS.highlights.clear();
+        } else {
+            // 降级模式：清理 sf-mark 元素
+            const oldMarks = document.querySelectorAll('sf-mark');
+            if (oldMarks.length > 0) {
+                oldMarks.forEach(m => {
+                    const p = m.parentNode;
+                    if(p) {
+                        p.replaceChild(document.createTextNode(m.textContent), m);
+                        p.normalize();
+                    }
+                });
+            }
+        }
+
+        // === Phase 1: Snapshot (快照) ===
+        state.isDirty = false;
+        state.searchId++;
+        const currentId = state.searchId;
+
+        // 创建新的中止控制器
         state.abortController = { abort: false };
         const abortSignal = state.abortController;
-        
+
         const val = input.value;
         const cfg = JSON.parse(JSON.stringify(CONFIG.search));
-        
-        state.ranges = [];
+
+        // Reset UI
+        state.ranges = []; // 改用 ranges
         state.idx = -1;
         tickBar.innerHTML = '';
         toast.classList.remove('visible');
         input.classList.remove('warn-hidden');
         countDisplay.textContent = '';
-        
-        if (!val.trim()) { 
-            loadingInd.style.display = 'none'; 
+
+        if (!val.trim()) {
+            loadingInd.style.display = 'none';
             countDisplay.style.opacity = '1';
             state.abortController = null;
-            return; 
+            return;
         }
 
         loadingInd.style.display = 'block';
         countDisplay.style.opacity = '0';
+
+        // Micro yield for UI
         await new Promise(r => setTimeout(r, 0));
-        if (abortSignal.abort) return;
-        
+        if (abortSignal.abort) return; // Early exit check
+
         const effectiveWholeWord = cfg.wholeWord && !isCJK(val);
         let terms = [];
         if (cfg.regex) terms = [{ text: val, isRegex: true }];
@@ -732,49 +845,82 @@
             return;
         }
 
+        // === Phase 2: Node Collection (节点收集) ===
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
             acceptNode: n => {
                 const p = n.parentNode;
-                if(['SCRIPT','STYLE','TEXTAREA','NOSCRIPT','INPUT','SELECT'].includes(p.tagName)) return NodeFilter.FILTER_REJECT;
-                if(shadow && shadow.host && shadow.host.contains(p)) return NodeFilter.FILTER_REJECT;
-                if(!cfg.includeHidden && !isVisible(p)) return NodeFilter.FILTER_REJECT;
+
+                // 基础排除
+                if(['SCRIPT','STYLE','TEXTAREA','NOSCRIPT','INPUT','SELECT'].includes(p.tagName))
+                    return NodeFilter.FILTER_REJECT;
+
+                // 排除我们自己的组件
+                if(shadow && shadow.host && shadow.host.contains(p))
+                    return NodeFilter.FILTER_REJECT;
+
+                // 可见性检查
+                if(!cfg.includeHidden && !isVisible(p))
+                    return NodeFilter.FILTER_REJECT;
+
                 return NodeFilter.FILTER_ACCEPT;
             }
         });
         const nodes = [];
         while(walker.nextNode()) nodes.push(walker.currentNode);
 
-        const ranges = [];
-        const BATCH_SIZE = 50;
+        // === Phase 3: Batched Processing (Range 收集 - 无 DOM 操作！) ===
+        const allRanges = [];
+        const MAX_HIGHLIGHTS = 1000; // CSS Highlight API 可以处理更多
+        const BATCH_SIZE = 100; // 因为没有 DOM 操作，可以提高批次大小
         let lastYield = performance.now();
+        let skippedDueToLimit = false;
 
         for (let i = 0; i < nodes.length; i++) {
+            // 强制中止检查
             if (abortSignal.abort || state.searchId !== currentId) {
+                // 清理未处理的节点引用
+                for (let j = i; j < nodes.length; j++) {
+                    nodes[j] = null;
+                }
                 state.abortController = null;
                 return;
             }
 
+            // === 数量限制检查 ===
+            if (allRanges.length >= MAX_HIGHLIGHTS) {
+                skippedDueToLimit = true;
+                break;
+            }
+
+            // === 时间切片（因无 DOM 操作，可降低频率）===
             if (i % BATCH_SIZE === 0 && i > 0) {
                 const now = performance.now();
-                if (now - lastYield > 10) {
+                if (now - lastYield > 16) { // 提高到 16ms（一帧）
                     await new Promise(r => setTimeout(r, 0));
                     lastYield = performance.now();
+
+                    // 释放已处理节点的内存
+                    for (let j = Math.max(0, i - BATCH_SIZE); j < i; j++) {
+                        nodes[j] = null;
+                    }
                 }
             }
 
             const node = nodes[i];
-            if (!node) continue;
-            
+            if (!node || !node.parentNode) continue;
+
             const originalText = node.textContent;
             const textForSearch = cfg.ignoreAccents ? originalText.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : originalText;
-            let matches = [];
+            let ranges = [];
 
             terms.forEach((termObj, termIdx) => {
+                const termColor = CONFIG.colors[termIdx % CONFIG.colors.length];
+
                 if (termObj.isRegex) {
                     try {
                         const re = new RegExp(termObj.text, cfg.matchCase ? 'g' : 'gi');
                         let m;
-                        while ((m = re.exec(textForSearch)) !== null) matches.push({ s: m.index, e: re.lastIndex });
+                        while ((m = re.exec(textForSearch)) !== null) ranges.push({ s: m.index, e: re.lastIndex, c: termColor });
                     } catch(e) {}
                 } else if (cfg.fuzzy) {
                     const k = cfg.fuzzyTolerance;
@@ -803,8 +949,8 @@
                             }
                         }
                         if (bestLen !== -1) {
-                            matches.push({ s: pos, e: pos + bestLen });
-                            pos += bestLen - 1; 
+                            ranges.push({ s: pos, e: pos + bestLen, c: termColor });
+                            pos += bestLen - 1;
                         }
                     }
                 } else {
@@ -812,42 +958,126 @@
                     const pattern = effectiveWholeWord ? `\\b${esc(termObj.text)}\\b` : esc(termObj.text);
                     const re = new RegExp(pattern, cfg.matchCase ? 'g' : 'gi');
                     let m;
-                    while ((m = re.exec(textForSearch)) !== null) matches.push({ s: m.index, e: re.lastIndex });
+                    while ((m = re.exec(textForSearch)) !== null) ranges.push({ s: m.index, e: re.lastIndex, c: termColor });
                 }
             });
 
-            // 为每个匹配创建 Range
-            matches.forEach(m => {
-                try {
-                    const range = document.createRange();
-                    range.setStart(node, m.s);
-                    range.setEnd(node, m.e);
-                    ranges.push(range);
-                } catch(e) {
-                    // Range 创建失败，跳过
+            if (ranges.length > 0) {
+                ranges.sort((a, b) => a.s - b.s);
+
+                // 合并重叠区域
+                const clean = [ranges[0]];
+                for(let j=1; j<ranges.length; j++) {
+                    if(ranges[j].s < clean[clean.length-1].e) {
+                        clean[clean.length-1].e = Math.max(clean[clean.length-1].e, ranges[j].e);
+                    } else {
+                        clean.push(ranges[j]);
+                    }
                 }
-            });
+
+                // === 创建 Range 对象（无 DOM 修改！）===
+                clean.forEach(r => {
+                    try {
+                        const range = document.createRange();
+                        range.setStart(node, r.s);
+                        range.setEnd(node, r.e);
+                        allRanges.push({
+                            range: range,
+                            color: r.c,
+                            node: node // 保存引用用于后续处理
+                        });
+                    } catch(e) {
+                        // Range 创建失败，跳过
+                    }
+                });
+
+                // 清理临时数组
+                ranges.length = 0;
+                ranges = null;
+            }
+
+            // 立即释放当前节点引用
+            nodes[i] = null;
         }
 
+        // === Phase 4: Apply Highlights (应用高亮 - CSS Highlight API) ===
         if (abortSignal.abort || state.searchId !== currentId) {
             state.abortController = null;
             return;
         }
-        
-        state.ranges = ranges;
+
+        state.ranges = allRanges;
         state.abortController = null;
-        
-        // 应用 CSS Highlight
-        if (ranges.length > 0 && CSS.highlights) {
-            const highlight = new Highlight(...ranges);
-            CSS.highlights.set('sf-search-all', highlight);
-        }
-        
+
         loadingInd.style.display = 'none';
         countDisplay.style.opacity = '1';
-        
+
+        // 如果触发了数量限制，显示提示
+        if (skippedDueToLimit) {
+            toast.textContent = `${CONFIG.lang === 'zh' ? '结果过多，仅显示前' : 'Too many, showing first'} ${MAX_HIGHLIGHTS}`;
+            toast.classList.add('visible');
+            setTimeout(() => toast.classList.remove('visible'), 3000);
+        }
+
+        // === 使用 CSS Highlight API 一次性应用所有高亮 ===
+        if (state.supportsHighlight && CSS.highlights && allRanges.length > 0) {
+            // 提取所有 Range 对象
+            const rangeObjects = allRanges.map(r => r.range);
+
+            // 创建 Highlight 实例并注册
+            const highlight = new Highlight(...rangeObjects);
+            CSS.highlights.set('sf-search-all', highlight);
+
+            state.currentHighlight = highlight;
+        } else if (!state.supportsHighlight) {
+            // 降级提示
+            toast.textContent = CONFIG.lang === 'zh' ? '浏览器不支持，请升级 Chrome 105+' : 'Unsupported browser, upgrade to Chrome 105+';
+            toast.classList.add('visible');
+            setTimeout(() => toast.classList.remove('visible'), 5000);
+        }
+
         updateUI();
-        if (ranges.length > 0) go(1);
+        if (allRanges.length > 0) go(1);
+        drawTickBar();
+    }
+
+    function highlightAll() {
+        if (!state.supportsHighlight || !CSS.highlights) return;
+
+        const show = CONFIG.search.highlightAll;
+
+        // 清除旧的高亮
+        CSS.highlights.clear();
+
+        if (state.ranges.length === 0) return;
+
+        // 应用所有高亮（如果开启了 highlightAll）
+        if (show) {
+            const allRangeObjects = state.ranges.map(r => r.range);
+            const allHighlight = new Highlight(...allRangeObjects);
+            CSS.highlights.set('sf-search-all', allHighlight);
+        }
+
+        // 高亮当前选中项
+        if (state.idx > -1 && state.ranges[state.idx]) {
+            const activeRange = state.ranges[state.idx].range;
+            const activeHighlight = new Highlight(activeRange);
+            CSS.highlights.set('sf-search-active', activeHighlight);
+
+            // 滚动到可视区域
+            try {
+                const rect = activeRange.getBoundingClientRect();
+                if (rect.top < 0 || rect.bottom > window.innerHeight) {
+                    activeRange.startContainer.parentElement?.scrollIntoView({
+                        block:'center',
+                        behavior:'smooth'
+                    });
+                }
+            } catch(e) {
+                // 滚动失败，忽略
+            }
+        }
+
         drawTickBar();
     }
 
@@ -856,51 +1086,54 @@
         if(!state.ranges.length) { tickBar.style.display='none'; return; }
         tickBar.style.display='block';
         const h = document.documentElement.scrollHeight;
-        state.ranges.forEach((range, i) => {
+
+        state.ranges.forEach((rangeData, i) => {
             try {
-                const rect = range.getBoundingClientRect();
+                const rect = rangeData.range.getBoundingClientRect();
                 const top = window.scrollY + rect.top;
                 const pct = (top / h) * 100;
                 const isAct = i === state.idx;
+
                 const mark = document.createElement('div');
                 mark.style.cssText = `position:absolute; right:0; top:${pct}%; transform:translateY(-50%); pointer-events:none;`;
+
                 if (isAct) {
                     mark.style.borderRight = '10px solid #ff3333';
                     mark.style.borderTop = '6px solid transparent';
                     mark.style.borderBottom = '6px solid transparent';
                     mark.style.zIndex = 999;
                 } else {
-                    mark.style.width = '10px'; mark.style.height = '4px'; 
-                    mark.style.background = CONFIG.colors[0]; mark.style.opacity = 0.8;
+                    mark.style.width = '10px';
+                    mark.style.height = '4px';
+                    mark.style.background = rangeData.color;
+                    mark.style.opacity = 0.8;
                 }
                 tickBar.appendChild(mark);
-            } catch(e) {}
+            } catch(e) {
+                // Range 无效，跳过
+            }
         });
     }
 
     function go(dir) {
         if (!state.ranges.length) return;
         state.idx = (state.idx + dir + state.ranges.length) % state.ranges.length;
-        
-        const range = state.ranges[state.idx];
-        if (!range) return;
-        
+
+        // 检查是否在隐藏元素中（通过 Range 的节点）
+        let isHidden = false;
         try {
-            // 高亮当前项
-            CSS.highlights.delete('sf-search-active');
-            const activeHighlight = new Highlight(range);
-            CSS.highlights.set('sf-search-active', activeHighlight);
-            
-            // 滚动到视图
-            const rect = range.getBoundingClientRect();
-            const isHidden = rect.top < 0 || rect.bottom > window.innerHeight;
-            toast.classList.toggle('visible', isHidden);
-            
-            range.startContainer.parentElement.scrollIntoView({block:'center', behavior:'smooth'});
-        } catch(e) {}
-        
+            const rangeNode = state.ranges[state.idx].range.startContainer;
+            const element = rangeNode.nodeType === Node.TEXT_NODE ? rangeNode.parentElement : rangeNode;
+            isHidden = element ? !isVisible(element) : false;
+        } catch(e) {
+            // Range 无效
+        }
+
+        toast.textContent = isHidden ? t('hiddenAlert') : '';
+        toast.classList.toggle('visible', isHidden);
+        input.classList.toggle('warn-hidden', isHidden);
+        highlightAll();
         updateUI();
-        drawTickBar();
     }
 
     function updateUI() {
@@ -908,44 +1141,67 @@
     }
 
     function toggle(force) {
-        if (!root) tryInit(); 
+        if (!root) tryInit();
         const next = (force !== undefined) ? force : !state.visible;
         state.visible = next;
-        
+
         if (!root) { setTimeout(() => toggle(force), 100); return; }
 
         root.classList.toggle('show', next);
-        
+
         if (next) {
-            checkPageSize(); 
+            checkPageSize();
             setTimeout(() => input.focus(), 50);
             updatePlaceholder();
             if (input.value && state.ranges.length === 0 && !CONFIG.search.fuzzy && !state.manualMode) triggerSearch();
         } else {
+            // 关闭时强制中止所有搜索
             if (state.abortController) {
                 state.abortController.abort = true;
                 state.abortController = null;
             }
-            
-            // 清理高亮
-            if (CSS.highlights) {
+
+            // 清理高亮（CSS Highlight API 方式）
+            if (state.supportsHighlight && CSS.highlights) {
                 CSS.highlights.clear();
+            } else {
+                // 降级模式：清理 sf-mark 元素
+                document.querySelectorAll('sf-mark').forEach(m => {
+                    const p = m.parentNode;
+                    if(p) { p.replaceChild(document.createTextNode(m.textContent), m); p.normalize(); }
+                });
             }
+
             state.ranges = [];
+            state.currentHighlight = null;
             tickBar.style.display = 'none';
         }
     }
 
-    // CSS Highlight API 样式
+    // === CSS Highlight API 样式 ===
     const globalStyle = document.createElement('style');
     globalStyle.textContent = `
+        /* CSS Highlight API 样式 */
         ::highlight(sf-search-all) {
-            background-color: #fce8b2;
-            color: #000;
+            background-color: var(--sf-highlight-bg, #fce8b2);
+            color: #000000;
+            border-radius: 2px;
         }
         ::highlight(sf-search-active) {
             background-color: #ff9800 !important;
-            color: #000;
+            color: #000000 !important;
+            outline: 2px solid #d93025;
+            border-radius: 2px;
+        }
+
+        /* 降级方案：老式 sf-mark 元素（仅用于不支持 Highlight API 的浏览器）*/
+        sf-mark {
+            all: unset;
+            display: inline;
+            border-radius: 2px;
+            box-decoration-break: clone;
+            -webkit-box-decoration-break: clone;
+            color: inherit;
         }
     `;
     if (document.head) document.head.appendChild(globalStyle);
