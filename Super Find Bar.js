@@ -206,6 +206,7 @@
         isDirty: false,
         nodeCount: 0,
         manualMode: false,
+        hasWarned: false, // 是否已显示过性能警告
         abortController: null,
         currentHighlight: null, // CSS Highlight 实例
         supportsHighlight: typeof CSS !== 'undefined' && CSS.highlights // 检测 API 支持
@@ -962,39 +963,23 @@
                 }
             });
 
-            if (ranges.length > 0) {
-                ranges.sort((a, b) => a.s - b.s);
-
-                // 合并重叠区域
-                const clean = [ranges[0]];
-                for(let j=1; j<ranges.length; j++) {
-                    if(ranges[j].s < clean[clean.length-1].e) {
-                        clean[clean.length-1].e = Math.max(clean[clean.length-1].e, ranges[j].e);
-                    } else {
-                        clean.push(ranges[j]);
-                    }
+            // === 直接创建所有 Range（CSS Highlight API 支持重叠）===
+            // 注意：不需要合并重叠区域，CSS Highlight API 原生支持多个 Range 重叠
+            // 这样可以保留每个搜索词的独立颜色信息
+            ranges.forEach(r => {
+                try {
+                    const range = document.createRange();
+                    range.setStart(node, r.s);
+                    range.setEnd(node, r.e);
+                    allRanges.push({
+                        range: range,
+                        color: r.c,
+                        node: node // 保存引用用于后续处理
+                    });
+                } catch(e) {
+                    // Range 创建失败，跳过
                 }
-
-                // === 创建 Range 对象（无 DOM 修改！）===
-                clean.forEach(r => {
-                    try {
-                        const range = document.createRange();
-                        range.setStart(node, r.s);
-                        range.setEnd(node, r.e);
-                        allRanges.push({
-                            range: range,
-                            color: r.c,
-                            node: node // 保存引用用于后续处理
-                        });
-                    } catch(e) {
-                        // Range 创建失败，跳过
-                    }
-                });
-
-                // 清理临时数组
-                ranges.length = 0;
-                ranges = null;
-            }
+            });
 
             // 立即释放当前节点引用
             nodes[i] = null;
@@ -1019,46 +1004,63 @@
             setTimeout(() => toast.classList.remove('visible'), 3000);
         }
 
-        // === 使用 CSS Highlight API 一次性应用所有高亮 ===
-        if (state.supportsHighlight && CSS.highlights && allRanges.length > 0) {
-            // 提取所有 Range 对象
-            const rangeObjects = allRanges.map(r => r.range);
-
-            // 创建 Highlight 实例并注册
-            const highlight = new Highlight(...rangeObjects);
-            CSS.highlights.set('sf-search-all', highlight);
-
-            state.currentHighlight = highlight;
-        } else if (!state.supportsHighlight) {
-            // 降级提示
+        // 检查浏览器支持
+        if (!state.supportsHighlight) {
             toast.textContent = CONFIG.lang === 'zh' ? '浏览器不支持，请升级 Chrome 105+' : 'Unsupported browser, upgrade to Chrome 105+';
             toast.classList.add('visible');
             setTimeout(() => toast.classList.remove('visible'), 5000);
         }
 
         updateUI();
-        if (allRanges.length > 0) go(1);
-        drawTickBar();
+        // go(1) 内部会调用 highlightAll()，统一管理高亮逻辑
+        if (allRanges.length > 0) {
+            go(1);
+        } else {
+            // 即使没有结果，也需要更新 tick bar（清空）
+            drawTickBar();
+        }
     }
 
     function highlightAll() {
-        if (!state.supportsHighlight || !CSS.highlights) return;
+        if (!state.supportsHighlight || !CSS.highlights) {
+            // 即使不支持高亮，仍需绘制 tick bar
+            drawTickBar();
+            return;
+        }
 
         const show = CONFIG.search.highlightAll;
 
         // 清除旧的高亮
         CSS.highlights.clear();
 
-        if (state.ranges.length === 0) return;
+        if (state.ranges.length === 0) {
+            drawTickBar();
+            return;
+        }
 
         // 应用所有高亮（如果开启了 highlightAll）
         if (show) {
-            const allRangeObjects = state.ranges.map(r => r.range);
-            const allHighlight = new Highlight(...allRangeObjects);
-            CSS.highlights.set('sf-search-all', allHighlight);
+            // 按颜色分组 Range 对象
+            const colorGroups = {};
+            state.ranges.forEach(rangeData => {
+                const color = rangeData.color;
+                if (!colorGroups[color]) {
+                    colorGroups[color] = [];
+                }
+                colorGroups[color].push(rangeData.range);
+            });
+
+            // 为每个颜色组创建独立的 Highlight
+            Object.keys(colorGroups).forEach(color => {
+                const colorIdx = CONFIG.colors.indexOf(color);
+                if (colorIdx !== -1) {
+                    const highlight = new Highlight(...colorGroups[color]);
+                    CSS.highlights.set(`sf-term-${colorIdx}`, highlight);
+                }
+            });
         }
 
-        // 高亮当前选中项
+        // 高亮当前选中项（橙色边框 + 高优先级）
         if (state.idx > -1 && state.ranges[state.idx]) {
             const activeRange = state.ranges[state.idx].range;
             const activeHighlight = new Highlight(activeRange);
@@ -1078,6 +1080,7 @@
             }
         }
 
+        // 最后绘制 tick bar
         drawTickBar();
     }
 
@@ -1180,13 +1183,20 @@
 
     // === CSS Highlight API 样式 ===
     const globalStyle = document.createElement('style');
-    globalStyle.textContent = `
-        /* CSS Highlight API 样式 */
-        ::highlight(sf-search-all) {
-            background-color: var(--sf-highlight-bg, #fce8b2);
+    // 为每个配置的颜色创建独立的 CSS 样式
+    const highlightStyles = DEFAULT_CONFIG.colors.map((color, idx) => `
+        ::highlight(sf-term-${idx}) {
+            background-color: ${color};
             color: #000000;
             border-radius: 2px;
         }
+    `).join('\n');
+    
+    globalStyle.textContent = `
+        /* CSS Highlight API 样式 - 多词多色 */
+        ${highlightStyles}
+        
+        /* 当前选中项样式（橙色高亮 + 红色边框）*/
         ::highlight(sf-search-active) {
             background-color: #ff9800 !important;
             color: #000000 !important;
