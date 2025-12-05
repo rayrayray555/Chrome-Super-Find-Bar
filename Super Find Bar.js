@@ -41,7 +41,7 @@
             fuzzy: false,
             fuzzyTolerance: 1,
             pinned: ['matchCase', 'wholeWord', 'ignoreAccents', 'highlightAll'],
-            perfThreshold: 3000
+            perfThreshold: 5000
         },
         colors: [
             '#fce8b2', // Yellow
@@ -73,12 +73,13 @@
     // i18n
     const I18N = {
         zh: {
-            ph: '查找（多字段搜索“，”隔开）...',
-            phFuzzy: '模糊模式：输入后按 Enter 计算...',
-            phManual: '页面内容过多：输入后按 Enter 计算...',
+            ph: '多词搜索用"，"分隔（不同颜色）',
+            phFuzzy: '模糊模式：输入后按 Enter 搜索...',
+            phManual: '页面内容过多：输入后按 Enter 搜索...',
             count: '{i} / {total}',
             hiddenAlert: '位于隐藏区域',
             loading: '计算中...',
+            saved: '✓ 已保存',
             titles: {
                 prev: '上一个 (Shift+Enter)',
                 next: '下一个 (Enter)',
@@ -112,12 +113,13 @@
             }
         },
         en: {
-            ph: 'Find (comma for multiple terms)...',
+            ph: 'Multi-term: comma-separated (different colors)',
             phFuzzy: 'Fuzzy Mode: Press Enter to search...',
             phManual: 'Page too large: Press Enter to search...',
             count: '{i} / {total}',
             hiddenAlert: 'Hidden Element',
             loading: 'Searching...',
+            saved: '✓ Saved',
             titles: {
                 prev: 'Previous (Shift+Enter)',
                 next: 'Next (Enter)',
@@ -381,6 +383,16 @@
             .sf-lang-switch { display: flex; background: rgba(255,255,255,0.1); border-radius: 4px; padding: 2px; cursor: pointer; }
             .sf-lang-opt { padding: 2px 8px; border-radius: 2px; font-size: 11px; opacity: 0.6; transition: 0.2s; }
             .sf-lang-opt.active { background: var(--sf-accent); color: #fff; opacity: 1; font-weight: bold; }
+
+            /* Success Toast */
+            .sf-success-toast {
+                position: absolute; top: 10px; right: 10px; z-index: 9999;
+                background: #4caf50; color: white; padding: 6px 12px;
+                border-radius: 4px; font-size: 12px; font-weight: 500;
+                opacity: 0; transition: opacity 0.3s;
+                box-shadow: 0 2px 8px rgba(76,175,80,0.4);
+            }
+            .sf-success-toast.show { opacity: 1; }
         `;
         shadow.appendChild(style);
 
@@ -431,6 +443,7 @@
         renderCheckboxes(chkGroup);
         applyLayout();
         initTickBar();
+        updateColorStyles(); // 初始化颜色样式
 
         let deb;
         input.oninput = () => {
@@ -443,13 +456,25 @@
         };
         input.onkeydown = (e) => {
             e.stopPropagation();
+            
+            // Enter 键专职搜索（Shift+Enter 也是搜索，不切换）
             if (e.key === 'Enter') {
                 e.preventDefault();
-                if (state.isDirty || state.ranges.length === 0) {
-                    triggerSearch();
-                } else {
-                    go(e.shiftKey ? -1 : 1);
-                }
+                triggerSearch();
+                return;
+            }
+            
+            // 箭头键切换上下匹配
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (state.ranges.length > 0) go(-1);
+                return;
+            }
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (state.ranges.length > 0) go(1);
+                return;
             }
         };
 
@@ -526,6 +551,7 @@
             CONFIG.search.fuzzyTolerance = parseInt(e.target.value);
             fuzzyVal.textContent = CONFIG.search.fuzzyTolerance;
             saveConfig();
+            showSuccessToast(t('saved'));
         };
         fuzzyRow.append(fuzzyVal, fuzzyRange);
 
@@ -546,6 +572,7 @@
             if(isNaN(v) || v < 0) v = 3000;
             CONFIG.search.perfThreshold = v;
             saveConfig();
+            showSuccessToast(t('saved'));
         };
 
         const btnReset = mkBtn(t('titles.reset'), 'Default 3000', () => {
@@ -562,7 +589,62 @@
         perfHint.className = 'sf-hint';
         perfHint.textContent = t('lbl.perfHint');
 
-        grpSearch.append(fuzzyRow, perfRow, perfHint);
+        // 多词颜色方案设置
+        const colorSchemeRow = document.createElement('div');
+        colorSchemeRow.style.marginTop = '12px';
+        const colorTitle = document.createElement('div');
+        colorTitle.className = 'sf-adv-lbl';
+        colorTitle.textContent = CONFIG.lang === 'zh' ? '多词颜色方案 (最多7词)' : 'Multi-term Colors (Max 7)';
+        colorTitle.style.marginBottom = '8px';
+        colorSchemeRow.appendChild(colorTitle);
+
+        const colorGrid = document.createElement('div');
+        colorGrid.style.display = 'grid';
+        colorGrid.style.gridTemplateColumns = 'repeat(4, 1fr)';
+        colorGrid.style.gap = '8px';
+        colorGrid.style.marginBottom = '8px';
+
+        CONFIG.colors.forEach((color, idx) => {
+            const colorWrap = document.createElement('div');
+            colorWrap.style.display = 'flex';
+            colorWrap.style.flexDirection = 'column';
+            colorWrap.style.alignItems = 'center';
+            
+            const colorInp = document.createElement('input');
+            colorInp.type = 'color';
+            colorInp.value = color;
+            colorInp.style.cssText = 'width:40px;height:40px;border:2px solid rgba(255,255,255,0.2);cursor:pointer;border-radius:6px;';
+            colorInp.onchange = (e) => {
+                CONFIG.colors[idx] = e.target.value;
+                saveConfig();
+                updateColorStyles();
+                showSuccessToast(t('saved'));
+            };
+            
+            const colorLabel = document.createElement('div');
+            colorLabel.textContent = idx + 1;
+            colorLabel.style.fontSize = '10px';
+            colorLabel.style.marginTop = '4px';
+            colorLabel.style.opacity = '0.6';
+            
+            colorWrap.append(colorInp, colorLabel);
+            colorGrid.appendChild(colorWrap);
+        });
+
+        const btnResetColors = document.createElement('button');
+        btnResetColors.textContent = CONFIG.lang === 'zh' ? '重置为默认' : 'Reset Colors';
+        btnResetColors.style.cssText = 'width:100%;padding:6px;font-size:11px;margin-top:4px;';
+        btnResetColors.onclick = () => {
+            CONFIG.colors = [...DEFAULT_CONFIG.colors];
+            saveConfig();
+            updateColorStyles();
+            renderAdvPanel();
+            showSuccessToast(t('saved'));
+        };
+
+        colorSchemeRow.append(colorGrid, btnResetColors);
+
+        grpSearch.append(fuzzyRow, perfRow, perfHint, colorSchemeRow);
 
         // Group 3: Layout
         const grpLayout = document.createElement('div');
@@ -677,7 +759,7 @@
     function initTickBar() {
         tickBar = document.createElement('div');
         Object.assign(tickBar.style, {
-            position: 'fixed', top: '0', right: '0', width: '16px', height: '100%',
+            position: 'fixed', top: '0', right: '0', width: '20px', height: '100%',
             zIndex: 2147483646, pointerEvents: 'none', display: 'none'
         });
         document.body.appendChild(tickBar);
@@ -756,6 +838,41 @@
         root.style.setProperty('--sf-bg', CONFIG.theme.bg);
         root.style.setProperty('--sf-txt', CONFIG.theme.text);
         root.style.opacity = CONFIG.theme.opacity;
+    }
+
+    // 动态更新颜色样式
+    function updateColorStyles() {
+        const oldStyle = document.getElementById('sf-color-styles');
+        if (oldStyle) oldStyle.remove();
+        
+        const style = document.createElement('style');
+        style.id = 'sf-color-styles';
+        style.textContent = CONFIG.colors.map((color, idx) => `
+            ::highlight(sf-term-${idx}) {
+                background-color: ${color};
+                color: #000000;
+                border-radius: 2px;
+            }
+        `).join('\n');
+        document.head.appendChild(style);
+    }
+
+    // 显示成功提示
+    function showSuccessToast(message) {
+        // 移除旧的 toast
+        const oldToast = advPanel.querySelector('.sf-success-toast');
+        if (oldToast) oldToast.remove();
+        
+        const successToast = document.createElement('div');
+        successToast.className = 'sf-success-toast';
+        successToast.textContent = message;
+        advPanel.appendChild(successToast);
+        
+        setTimeout(() => successToast.classList.add('show'), 10);
+        setTimeout(() => {
+            successToast.classList.remove('show');
+            setTimeout(() => successToast.remove(), 300);
+        }, 1500);
     }
 
     /********************
@@ -872,7 +989,7 @@
         // === Phase 3: Batched Processing (Range 收集 - 无 DOM 操作！) ===
         const allRanges = [];
         const MAX_HIGHLIGHTS = 1000; // CSS Highlight API 可以处理更多
-        const BATCH_SIZE = 100; // 因为没有 DOM 操作，可以提高批次大小
+        const BATCH_SIZE = 200; // CSS Highlight API 性能优异，提高批次大小
         let lastYield = performance.now();
         let skippedDueToLimit = false;
 
@@ -896,7 +1013,7 @@
             // === 时间切片（因无 DOM 操作，可降低频率）===
             if (i % BATCH_SIZE === 0 && i > 0) {
                 const now = performance.now();
-                if (now - lastYield > 16) { // 提高到 16ms（一帧）
+                if (now - lastYield > 32) { // 提高到 32ms（减少线程切换）
                     await new Promise(r => setTimeout(r, 0));
                     lastYield = performance.now();
 
@@ -1066,17 +1183,44 @@
             const activeHighlight = new Highlight(activeRange);
             CSS.highlights.set('sf-search-active', activeHighlight);
 
-            // 滚动到可视区域
+            // 滚动到可视区域（增强兼容性）
             try {
                 const rect = activeRange.getBoundingClientRect();
-                if (rect.top < 0 || rect.bottom > window.innerHeight) {
-                    activeRange.startContainer.parentElement?.scrollIntoView({
-                        block:'center',
-                        behavior:'smooth'
-                    });
+                const isOutOfView = rect.top < 0 || rect.bottom > window.innerHeight;
+                
+                if (isOutOfView) {
+                    // 尝试获取元素
+                    let element = activeRange.startContainer;
+                    
+                    // 向上查找可滚动元素
+                    while (element && element.nodeType === Node.TEXT_NODE) {
+                        element = element.parentElement;
+                    }
+                    
+                    if (element && element.scrollIntoView) {
+                        // 原生滚动
+                        element.scrollIntoView({
+                            block: 'center',
+                            behavior: 'smooth'
+                        });
+                    } else {
+                        // 降级：计算位置直接滚动
+                        const targetY = window.pageYOffset + rect.top - window.innerHeight / 2;
+                        window.scrollTo({
+                            top: Math.max(0, targetY),
+                            behavior: 'smooth'
+                        });
+                    }
                 }
             } catch(e) {
-                // 滚动失败，忽略
+                // 最终降级：立即滚动
+                try {
+                    const rect = activeRange.getBoundingClientRect();
+                    const targetY = window.pageYOffset + rect.top - window.innerHeight / 2;
+                    window.scrollTo(0, Math.max(0, targetY));
+                } catch(e2) {
+                    // 完全失败，忽略
+                }
             }
         }
 
@@ -1088,28 +1232,53 @@
         tickBar.innerHTML = '';
         if(!state.ranges.length) { tickBar.style.display='none'; return; }
         tickBar.style.display='block';
-        const h = document.documentElement.scrollHeight;
+        
+        // 改进的高度计算
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const docHeight = Math.max(
+            document.documentElement.scrollHeight,
+            document.documentElement.clientHeight,
+            document.body.scrollHeight,
+            document.body.clientHeight
+        );
 
         state.ranges.forEach((rangeData, i) => {
             try {
                 const rect = rangeData.range.getBoundingClientRect();
-                const top = window.scrollY + rect.top;
-                const pct = (top / h) * 100;
+                const absoluteTop = scrollTop + rect.top;
+                const pct = Math.max(0, Math.min(100, (absoluteTop / docHeight) * 100));
                 const isAct = i === state.idx;
 
                 const mark = document.createElement('div');
-                mark.style.cssText = `position:absolute; right:0; top:${pct}%; transform:translateY(-50%); pointer-events:none;`;
-
+                
                 if (isAct) {
-                    mark.style.borderRight = '10px solid #ff3333';
-                    mark.style.borderTop = '6px solid transparent';
-                    mark.style.borderBottom = '6px solid transparent';
-                    mark.style.zIndex = 999;
+                    // 当前项：左侧大三角（更明显）
+                    mark.style.cssText = `
+                        position: absolute;
+                        left: 0;
+                        top: ${pct}%;
+                        transform: translateY(-50%);
+                        width: 0;
+                        height: 0;
+                        border-right: 14px solid #ff3333;
+                        border-top: 9px solid transparent;
+                        border-bottom: 9px solid transparent;
+                        z-index: 999;
+                        filter: drop-shadow(0 0 3px rgba(255,51,51,0.8));
+                    `;
                 } else {
-                    mark.style.width = '10px';
-                    mark.style.height = '4px';
-                    mark.style.background = rangeData.color;
-                    mark.style.opacity = 0.8;
+                    // 其他项：右侧小圆点
+                    mark.style.cssText = `
+                        position: absolute;
+                        right: 4px;
+                        top: ${pct}%;
+                        width: 8px;
+                        height: 8px;
+                        background: ${rangeData.color};
+                        border-radius: 50%;
+                        opacity: 0.85;
+                        transform: translateY(-50%);
+                    `;
                 }
                 tickBar.appendChild(mark);
             } catch(e) {
@@ -1181,27 +1350,18 @@
         }
     }
 
-    // === CSS Highlight API 样式 ===
+    // === CSS Highlight API 固定样式 ===
     const globalStyle = document.createElement('style');
-    // 为每个配置的颜色创建独立的 CSS 样式
-    const highlightStyles = DEFAULT_CONFIG.colors.map((color, idx) => `
-        ::highlight(sf-term-${idx}) {
-            background-color: ${color};
-            color: #000000;
-            border-radius: 2px;
-        }
-    `).join('\n');
-    
     globalStyle.textContent = `
-        /* CSS Highlight API 样式 - 多词多色 */
-        ${highlightStyles}
-        
-        /* 当前选中项样式（橙色高亮 + 红色边框）*/
+        /* 当前选中项样式（深橙红 + 白字 + 发光效果）*/
         ::highlight(sf-search-active) {
-            background-color: #ff9800 !important;
-            color: #000000 !important;
-            outline: 2px solid #d93025;
-            border-radius: 2px;
+            background-color: #ff5722 !important;
+            color: #ffffff !important;
+            outline: 3px solid #d32f2f;
+            outline-offset: -1px;
+            border-radius: 3px;
+            box-shadow: 0 0 8px rgba(255,87,34,0.6);
+            font-weight: 600;
         }
 
         /* 降级方案：老式 sf-mark 元素（仅用于不支持 Highlight API 的浏览器）*/
@@ -1216,6 +1376,8 @@
     `;
     if (document.head) document.head.appendChild(globalStyle);
     else window.addEventListener('DOMContentLoaded', () => document.head.appendChild(globalStyle));
+    
+    // 多词颜色样式由 updateColorStyles() 动态生成
 
     function handleKey(e) {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !e.shiftKey) {
